@@ -1,0 +1,30 @@
+name: airo_epg
+description: Compact and full EPG platform contracts for Flutter — XMLTV parsing, sports desk models, reminders, and multi-source EPG resolution.
+version: 1.0.0
+homepage: https://developerscoffee.com
+repository: https://github.com/DevelopersCoffee/airo_epg
+issue_tracker: https://github.com/DevelopersCoffee/airo_epg/issues
+documentation: https://github.com/DevelopersCoffee/airo_epg#readme
+
+topics:
+  - epg
+  - xmltv
+  - iptv
+  - tv
+  - schedule
+
+environment:
+  sdk: ^3.12.2
+  flutter: ">=3.18.0"
+
+dependencies:
+  equatable: ^2.1.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:

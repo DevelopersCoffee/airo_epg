@@ -1,0 +1,509 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+class NativeXmltvProgramme {
+  const NativeXmltvProgramme({
+    required this.channelId,
+    required this.start,
+    this.stop,
+    this.title,
+    this.subtitle,
+    this.description,
+    this.categories = const [],
+    this.episodeNumber,
+    this.iconUrl,
+    this.rating,
+    this.isNew = false,
+    this.isPremiere = false,
+    this.previouslyShown = false,
+  });
+
+  final String channelId;
+  final String start;
+  final String? stop;
+  final String? title;
+  final String? subtitle;
+  final String? description;
+  final List<String> categories;
+  final String? episodeNumber;
+  final String? iconUrl;
+  final String? rating;
+  final bool isNew;
+  final bool isPremiere;
+  final bool previouslyShown;
+}
+
+class NativeXmltvParseStats {
+  const NativeXmltvParseStats({
+    required this.programmeCount,
+    required this.skippedProgrammeCount,
+    required this.truncated,
+  });
+
+  final int programmeCount;
+  final int skippedProgrammeCount;
+  final bool truncated;
+}
+
+enum NativeXmltvParseBackend {
+  nativeBridge('native_bridge'),
+  dartFallback('dart_fallback');
+
+  const NativeXmltvParseBackend(this.stableId);
+
+  final String stableId;
+}
+
+class NativeXmltvParseResult {
+  const NativeXmltvParseResult({
+    required this.programmes,
+    required this.stats,
+    this.backend = NativeXmltvParseBackend.dartFallback,
+  });
+
+  final List<NativeXmltvProgramme> programmes;
+  final NativeXmltvParseStats stats;
+  final NativeXmltvParseBackend backend;
+}
+
+class NativeXmltvCurrentNextStats {
+  const NativeXmltvCurrentNextStats({
+    required this.programmeCount,
+    required this.skippedProgrammeCount,
+    required this.invalidTimestampCount,
+    required this.matchedProgrammeCount,
+    required this.requestedChannelCount,
+  });
+
+  final int programmeCount;
+  final int skippedProgrammeCount;
+  final int invalidTimestampCount;
+  final int matchedProgrammeCount;
+  final int requestedChannelCount;
+}
+
+class NativeXmltvCurrentNextEntry {
+  const NativeXmltvCurrentNextEntry({
+    required this.channelId,
+    this.current,
+    this.next,
+  });
+
+  final String channelId;
+  final NativeXmltvProgramme? current;
+  final NativeXmltvProgramme? next;
+}
+
+class NativeXmltvCurrentNextResult {
+  const NativeXmltvCurrentNextResult({
+    required this.entries,
+    required this.stats,
+    this.backend = NativeXmltvParseBackend.dartFallback,
+  });
+
+  final List<NativeXmltvCurrentNextEntry> entries;
+  final NativeXmltvCurrentNextStats stats;
+  final NativeXmltvParseBackend backend;
+}
+
+NativeXmltvParseResult parseXmltvProgrammes(
+  String content, {
+  int maxProgrammes = 1000,
+}) {
+  if (maxProgrammes < 0) {
+    throw ArgumentError.value(maxProgrammes, 'maxProgrammes', 'must be >= 0');
+  }
+
+  return _dartParseXmltvProgrammes(content, maxProgrammes: maxProgrammes);
+}
+
+Future<NativeXmltvParseResult> parseXmltvProgrammesNative(
+  String content, {
+  int maxProgrammes = 1000,
+}) async {
+  return parseXmltvProgrammes(content, maxProgrammes: maxProgrammes);
+}
+
+NativeXmltvParseResult parseXmltvProgrammesFile(
+  String path, {
+  int maxProgrammes = 1000,
+}) {
+  if (maxProgrammes < 0) {
+    throw ArgumentError.value(maxProgrammes, 'maxProgrammes', 'must be >= 0');
+  }
+
+  final normalizedPath = path.trim();
+  if (normalizedPath.isEmpty) {
+    throw ArgumentError.value(path, 'path', 'must not be empty');
+  }
+
+  if (kIsWeb) {
+    throw UnsupportedError(
+      'XMLTV file parsing is not available on web. '
+      'Use parseXmltvProgrammes with XMLTV content instead.',
+    );
+  }
+
+  final content = File(normalizedPath).readAsStringSync();
+  return _dartParseXmltvProgrammes(content, maxProgrammes: maxProgrammes);
+}
+
+Future<NativeXmltvParseResult> parseXmltvProgrammesFileNative(
+  String path, {
+  int maxProgrammes = 1000,
+}) async {
+  return parseXmltvProgrammesFile(path, maxProgrammes: maxProgrammes);
+}
+
+Future<NativeXmltvCurrentNextResult> parseXmltvCurrentNextFileNative(
+  String path, {
+  required Iterable<String> channelIds,
+  required DateTime now,
+  Duration defaultProgrammeDuration = const Duration(minutes: 30),
+}) async {
+  final normalizedPath = path.trim();
+  if (normalizedPath.isEmpty) {
+    throw ArgumentError.value(path, 'path', 'must not be empty');
+  }
+  if (defaultProgrammeDuration <= Duration.zero) {
+    throw ArgumentError.value(
+      defaultProgrammeDuration,
+      'defaultProgrammeDuration',
+      'must be > 0',
+    );
+  }
+
+  final requestedChannelIds = _normalizedChannelIds(channelIds);
+  if (kIsWeb) {
+    throw UnsupportedError(
+      'XMLTV file parsing is not available on web. '
+      'Use parseXmltvProgrammes with XMLTV content instead.',
+    );
+  }
+  if (requestedChannelIds.isEmpty) {
+    return const NativeXmltvCurrentNextResult(
+      entries: [],
+      stats: NativeXmltvCurrentNextStats(
+        programmeCount: 0,
+        skippedProgrammeCount: 0,
+        invalidTimestampCount: 0,
+        matchedProgrammeCount: 0,
+        requestedChannelCount: 0,
+      ),
+    );
+  }
+
+  final content = File(normalizedPath).readAsStringSync();
+  return _dartParseXmltvCurrentNext(
+    content,
+    channelIds: requestedChannelIds,
+    now: now,
+    defaultProgrammeDuration: defaultProgrammeDuration,
+  );
+}
+
+NativeXmltvParseResult _dartParseXmltvProgrammes(
+  String content, {
+  required int maxProgrammes,
+}) {
+  final programmes = <NativeXmltvProgramme>[];
+  var programmeCount = 0;
+  var skippedProgrammeCount = 0;
+  var truncated = false;
+
+  final programmePattern = RegExp(
+    r'<programme\b([^>]*)>(.*?)</programme>',
+    caseSensitive: false,
+    dotAll: true,
+  );
+
+  for (final match in programmePattern.allMatches(content)) {
+    final attributes = match.group(1) ?? '';
+    final body = match.group(2) ?? '';
+    final channelId = _xmlAttribute(attributes, 'channel');
+    final start = _xmlAttribute(attributes, 'start');
+
+    if (channelId == null || start == null) {
+      skippedProgrammeCount++;
+      continue;
+    }
+
+    programmeCount++;
+    if (programmes.length >= maxProgrammes) {
+      truncated = true;
+      continue;
+    }
+
+    programmes.add(
+      NativeXmltvProgramme(
+        channelId: channelId,
+        start: start,
+        stop: _xmlAttribute(attributes, 'stop'),
+        title: _xmlText(body, 'title'),
+        subtitle: _xmlText(body, 'sub-title'),
+        description: _xmlText(body, 'desc'),
+        categories: _xmlTexts(body, 'category'),
+        episodeNumber: _xmlText(body, 'episode-num'),
+        iconUrl: _xmlElementAttribute(body, 'icon', 'src'),
+        rating: _xmlText(_xmlElementBody(body, 'rating') ?? '', 'value'),
+        isNew: _xmlHasElement(body, 'new'),
+        isPremiere: _xmlHasElement(body, 'premiere'),
+        previouslyShown: _xmlHasElement(body, 'previously-shown'),
+      ),
+    );
+  }
+
+  return NativeXmltvParseResult(
+    programmes: List.unmodifiable(programmes),
+    stats: NativeXmltvParseStats(
+      programmeCount: programmeCount,
+      skippedProgrammeCount: skippedProgrammeCount,
+      truncated: truncated,
+    ),
+  );
+}
+
+NativeXmltvCurrentNextResult _dartParseXmltvCurrentNext(
+  String content, {
+  required List<String> channelIds,
+  required DateTime now,
+  required Duration defaultProgrammeDuration,
+}) {
+  final indexByChannelId = {
+    for (var index = 0; index < channelIds.length; index++)
+      channelIds[index]: index,
+  };
+  final candidates = List<_CurrentNextCandidate>.generate(
+    channelIds.length,
+    (_) => const _CurrentNextCandidate(),
+    growable: false,
+  );
+  final programmes = _dartParseXmltvProgrammes(
+    content,
+    maxProgrammes: 0x7fffffff,
+  );
+  var invalidTimestampCount = 0;
+  var matchedProgrammeCount = 0;
+  final nowUtc = now.toUtc();
+
+  for (final programme in programmes.programmes) {
+    final candidateIndex = indexByChannelId[programme.channelId];
+    if (candidateIndex == null) {
+      continue;
+    }
+
+    final startsAt = _parseXmltvTimestamp(programme.start);
+    if (startsAt == null) {
+      invalidTimestampCount++;
+      continue;
+    }
+    final parsedEndsAt = programme.stop == null
+        ? null
+        : _parseXmltvTimestamp(programme.stop!);
+    if (programme.stop != null && parsedEndsAt == null) {
+      invalidTimestampCount++;
+      continue;
+    }
+    final endsAt = parsedEndsAt ?? startsAt.add(defaultProgrammeDuration);
+    if (!endsAt.isAfter(startsAt)) {
+      invalidTimestampCount++;
+      continue;
+    }
+
+    matchedProgrammeCount++;
+    candidates[candidateIndex] = candidates[candidateIndex].add(
+      programme: programme,
+      startsAt: startsAt,
+      endsAt: endsAt,
+      now: nowUtc,
+    );
+  }
+
+  return NativeXmltvCurrentNextResult(
+    entries: [
+      for (var index = 0; index < channelIds.length; index++)
+        if (candidates[index].current != null || candidates[index].next != null)
+          NativeXmltvCurrentNextEntry(
+            channelId: channelIds[index],
+            current: candidates[index].current?.programme,
+            next: candidates[index].next?.programme,
+          ),
+    ],
+    stats: NativeXmltvCurrentNextStats(
+      programmeCount: programmes.stats.programmeCount,
+      skippedProgrammeCount: programmes.stats.skippedProgrammeCount,
+      invalidTimestampCount: invalidTimestampCount,
+      matchedProgrammeCount: matchedProgrammeCount,
+      requestedChannelCount: channelIds.length,
+    ),
+  );
+}
+
+List<String> _normalizedChannelIds(Iterable<String> channelIds) {
+  final seen = <String>{};
+  return [
+    for (final channelId in channelIds)
+      if (channelId.trim().isNotEmpty && seen.add(channelId.trim()))
+        channelId.trim(),
+  ];
+}
+
+DateTime? _parseXmltvTimestamp(String value) {
+  final match = RegExp(
+    r'^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\s*([+-])(\d{2})(\d{2}))?$',
+  ).firstMatch(value.trim());
+  if (match == null) return null;
+
+  try {
+    final year = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final day = int.parse(match.group(3)!);
+    final hour = int.parse(match.group(4)!);
+    final minute = int.parse(match.group(5)!);
+    final second = int.parse(match.group(6)!);
+    if (!_isValidUtcComponent(
+      year: year,
+      month: month,
+      day: day,
+      hour: hour,
+      minute: minute,
+      second: second,
+    )) {
+      return null;
+    }
+    final local = DateTime.utc(year, month, day, hour, minute, second);
+    final sign = match.group(7);
+    if (sign == null) return local;
+
+    final offset = Duration(
+      hours: int.parse(match.group(8)!),
+      minutes: int.parse(match.group(9)!),
+    );
+    return sign == '+' ? local.subtract(offset) : local.add(offset);
+  } on FormatException {
+    return null;
+  }
+}
+
+bool _isValidUtcComponent({
+  required int year,
+  required int month,
+  required int day,
+  required int hour,
+  required int minute,
+  required int second,
+}) {
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > DateTime.utc(year, month + 1, 0).day) return false;
+  if (hour < 0 || hour > 23) return false;
+  if (minute < 0 || minute > 59) return false;
+  if (second < 0 || second > 59) return false;
+  return true;
+}
+
+String? _xmlAttribute(String attributes, String name) {
+  final pattern = RegExp('$name="([^"]*)"', caseSensitive: false);
+  final match = pattern.firstMatch(attributes);
+  final value = match?.group(1)?.trim();
+  if (value == null || value.isEmpty) return null;
+  return _decodeXmlEntities(value);
+}
+
+String? _xmlText(String body, String tag) {
+  final pattern = RegExp(
+    '<$tag\\b[^>]*>(.*?)</$tag>',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  final match = pattern.firstMatch(body);
+  final value = match?.group(1)?.trim();
+  if (value == null || value.isEmpty) return null;
+  return _decodeXmlEntities(value);
+}
+
+List<String> _xmlTexts(String body, String tag) {
+  final pattern = RegExp(
+    '<$tag\\b[^>]*>(.*?)</$tag>',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  return pattern
+      .allMatches(body)
+      .map((match) => _decodeXmlEntities((match.group(1) ?? '').trim()))
+      .where((value) => value.isNotEmpty)
+      .toList(growable: false);
+}
+
+String? _xmlElementBody(String body, String tag) {
+  final pattern = RegExp(
+    '<$tag\\b[^>]*>(.*?)</$tag>',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  return pattern.firstMatch(body)?.group(1);
+}
+
+String? _xmlElementAttribute(String body, String tag, String attribute) {
+  final pattern = RegExp(
+    '<$tag\\b([^>]*)/?>',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  final attributes = pattern.firstMatch(body)?.group(1);
+  return attributes == null ? null : _xmlAttribute(attributes, attribute);
+}
+
+bool _xmlHasElement(String body, String tag) {
+  return RegExp('<$tag(?:\\s|/?>)', caseSensitive: false).hasMatch(body);
+}
+
+String _decodeXmlEntities(String value) {
+  return value
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&apos;', "'")
+      .replaceAll('&amp;', '&');
+}
+
+class _CurrentNextCandidate {
+  const _CurrentNextCandidate({this.current, this.next});
+
+  final _TimedProgramme? current;
+  final _TimedProgramme? next;
+
+  _CurrentNextCandidate add({
+    required NativeXmltvProgramme programme,
+    required DateTime startsAt,
+    required DateTime endsAt,
+    required DateTime now,
+  }) {
+    if (!startsAt.isAfter(now) && now.isBefore(endsAt)) {
+      final shouldReplace =
+          current == null || startsAt.isBefore(current!.startsAt);
+      return shouldReplace
+          ? _CurrentNextCandidate(
+              current: _TimedProgramme(programme, startsAt),
+              next: next,
+            )
+          : this;
+    }
+    if (startsAt.isAfter(now)) {
+      final shouldReplace = next == null || startsAt.isBefore(next!.startsAt);
+      return shouldReplace
+          ? _CurrentNextCandidate(
+              current: current,
+              next: _TimedProgramme(programme, startsAt),
+            )
+          : this;
+    }
+    return this;
+  }
+}
+
+class _TimedProgramme {
+  const _TimedProgramme(this.programme, this.startsAt);
+
+  final NativeXmltvProgramme programme;
+  final DateTime startsAt;
+}
