@@ -160,6 +160,7 @@ Future<NativeXmltvCurrentNextResult> parseXmltvCurrentNextFileNative(
   required Iterable<String> channelIds,
   required DateTime now,
   Duration defaultProgrammeDuration = const Duration(minutes: 30),
+  Duration? naiveOffset,
 }) async {
   final normalizedPath = path.trim();
   if (normalizedPath.isEmpty) {
@@ -199,6 +200,7 @@ Future<NativeXmltvCurrentNextResult> parseXmltvCurrentNextFileNative(
     channelIds: requestedChannelIds,
     now: now,
     defaultProgrammeDuration: defaultProgrammeDuration,
+    naiveOffset: naiveOffset,
   );
 }
 
@@ -268,6 +270,7 @@ NativeXmltvCurrentNextResult _dartParseXmltvCurrentNext(
   required List<String> channelIds,
   required DateTime now,
   required Duration defaultProgrammeDuration,
+  Duration? naiveOffset,
 }) {
   final indexByChannelId = {
     for (var index = 0; index < channelIds.length; index++)
@@ -292,14 +295,17 @@ NativeXmltvCurrentNextResult _dartParseXmltvCurrentNext(
       continue;
     }
 
-    final startsAt = _parseXmltvTimestamp(programme.start);
+    final startsAt = _parseXmltvTimestamp(
+      programme.start,
+      naiveOffset: naiveOffset,
+    );
     if (startsAt == null) {
       invalidTimestampCount++;
       continue;
     }
     final parsedEndsAt = programme.stop == null
         ? null
-        : _parseXmltvTimestamp(programme.stop!);
+        : _parseXmltvTimestamp(programme.stop!, naiveOffset: naiveOffset);
     if (programme.stop != null && parsedEndsAt == null) {
       invalidTimestampCount++;
       continue;
@@ -348,7 +354,7 @@ List<String> _normalizedChannelIds(Iterable<String> channelIds) {
   ];
 }
 
-DateTime? _parseXmltvTimestamp(String value) {
+DateTime? _parseXmltvTimestamp(String value, {Duration? naiveOffset}) {
   final match = RegExp(
     r'^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\s*([+-])(\d{2})(\d{2}))?$',
   ).firstMatch(value.trim());
@@ -371,16 +377,22 @@ DateTime? _parseXmltvTimestamp(String value) {
     )) {
       return null;
     }
-    final local = DateTime.utc(year, month, day, hour, minute, second);
+    final civil = DateTime.utc(year, month, day, hour, minute, second);
     final sign = match.group(7);
-    if (sign == null) return local;
-
-    final offset = Duration(
-      hours: int.parse(match.group(8)!),
-      minutes: int.parse(match.group(9)!),
-    );
-    return sign == '+' ? local.subtract(offset) : local.add(offset);
+    if (sign != null) {
+      final offset = Duration(
+        hours: int.parse(match.group(8)!),
+        minutes: int.parse(match.group(9)!),
+      );
+      return sign == '+' ? civil.subtract(offset) : civil.add(offset);
+    }
+    if (naiveOffset != null) {
+      return civil.subtract(naiveOffset);
+    }
+    return civil;
   } on FormatException {
+    return null;
+  } on ArgumentError {
     return null;
   }
 }

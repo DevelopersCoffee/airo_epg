@@ -457,5 +457,120 @@ void main() {
         expect(parseXmltvTimestamp('not-a-time'), isNull);
       },
     );
+
+    test(
+      'naked stamp with naiveOffset uses device zone, tagged ignores it',
+      () {
+        const ist = Duration(hours: 5, minutes: 30);
+        expect(
+          parseXmltvTimestamp('20260715090000', naiveOffset: ist),
+          DateTime.utc(2026, 7, 15, 3, 30),
+        );
+        expect(
+          parseXmltvTimestamp('20260715090000'),
+          DateTime.utc(2026, 7, 15, 9),
+        );
+        expect(
+          parseXmltvTimestamp('20260715090000 +0000', naiveOffset: ist),
+          DateTime.utc(2026, 7, 15, 9),
+        );
+        expect(
+          parseXmltvTimestamp(
+            '20260715143000 +0530',
+            naiveOffset: const Duration(hours: -4),
+          ),
+          DateTime.utc(2026, 7, 15, 9),
+        );
+      },
+    );
+
+    test(
+      'fromXmltv applies naiveOffset only to naked programme stamps',
+      () async {
+        const xml = '''
+<tv>
+  <programme channel="chan-1" start="20260717120000" stop="20260717123000">
+    <title>Naked</title>
+  </programme>
+  <programme channel="chan-1" start="20260717130000 +0000" stop="20260717133000 +0000">
+    <title>Tagged</title>
+  </programme>
+</tv>
+''';
+        final repository = XmltvCompactEpgRepository.fromXmltv(
+          content: xml,
+          ingestedAt: DateTime.utc(2026, 7, 17, 6),
+          naiveOffset: const Duration(hours: 5, minutes: 30),
+        );
+        final duringNaked = await repository.loadCurrentNext(
+          channelIds: const ['chan-1'],
+          now: DateTime.utc(2026, 7, 17, 6, 40),
+        );
+        expect(duringNaked.entryForChannel('chan-1')?.current?.title, 'Naked');
+        final duringTagged = await repository.loadCurrentNext(
+          channelIds: const ['chan-1'],
+          now: DateTime.utc(2026, 7, 17, 13, 10),
+        );
+        expect(
+          duringTagged.entryForChannel('chan-1')?.current?.title,
+          'Tagged',
+        );
+      },
+    );
+
+    test(
+      'fromXmltvCurrentNextFileNative applies naiveOffset only to naked programme stamps',
+      () async {
+        const xml = '''
+<tv>
+  <programme channel="chan-1" start="20260717120000" stop="20260717123000">
+    <title>Naked</title>
+  </programme>
+  <programme channel="chan-1" start="20260717130000 +0000" stop="20260717133000 +0000">
+    <title>Tagged</title>
+  </programme>
+</tv>
+''';
+        final directory = await Directory.systemTemp.createTemp(
+          'platform-epg-xmltv-current-next-naive-offset-test-',
+        );
+        addTearDown(() async {
+          if (await directory.exists()) {
+            await directory.delete(recursive: true);
+          }
+        });
+        final file = File('${directory.path}/guide.xml');
+        await file.writeAsString(xml);
+        const naiveOffset = Duration(hours: 5, minutes: 30);
+
+        final duringNaked =
+            await XmltvCompactEpgRepository.fromXmltvCurrentNextFileNative(
+              path: file.path,
+              ingestedAt: DateTime.utc(2026, 7, 17, 6),
+              channelIds: const ['chan-1'],
+              now: DateTime.utc(2026, 7, 17, 6, 40),
+              naiveOffset: naiveOffset,
+            );
+        final nakedSlice = await duringNaked.loadCurrentNext(
+          channelIds: const ['chan-1'],
+          now: DateTime.utc(2026, 7, 17, 6, 40),
+        );
+        expect(nakedSlice.entryForChannel('chan-1')?.current?.title, 'Naked');
+
+        final duringTagged =
+            await XmltvCompactEpgRepository.fromXmltvCurrentNextFileNative(
+              path: file.path,
+              ingestedAt: DateTime.utc(2026, 7, 17, 6),
+              channelIds: const ['chan-1'],
+              now: DateTime.utc(2026, 7, 17, 13, 10),
+              naiveOffset: naiveOffset,
+            );
+        final taggedSlice = await duringTagged.loadCurrentNext(
+          channelIds: const ['chan-1'],
+          now: DateTime.utc(2026, 7, 17, 13, 10),
+        );
+        expect(taggedSlice.entryForChannel('chan-1')?.current?.title, 'Tagged');
+      },
+    );
   });
 }
