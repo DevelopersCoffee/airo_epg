@@ -70,6 +70,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
     CompactEpgSourceRef? sourceRef,
     Map<String, String> channelNamesById = const {},
     Map<String, String> channelNumbersById = const {},
+    Duration? naiveOffset,
   }) {
     final nativeResult = parseXmltvProgrammes(
       content,
@@ -83,6 +84,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
       sourceRef: sourceRef,
       channelNamesById: channelNamesById,
       channelNumbersById: channelNumbersById,
+      naiveOffset: naiveOffset,
     );
   }
 
@@ -96,6 +98,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
     CompactEpgSourceRef? sourceRef,
     Map<String, String> channelNamesById = const {},
     Map<String, String> channelNumbersById = const {},
+    Duration? naiveOffset,
   }) {
     final nativeResult = parseXmltvProgrammesFile(
       path,
@@ -109,6 +112,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
       sourceRef: sourceRef,
       channelNamesById: channelNamesById,
       channelNumbersById: channelNumbersById,
+      naiveOffset: naiveOffset,
     );
   }
 
@@ -122,6 +126,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
     CompactEpgSourceRef? sourceRef,
     Map<String, String> channelNamesById = const {},
     Map<String, String> channelNumbersById = const {},
+    Duration? naiveOffset,
   }) async {
     final nativeResult = await parseXmltvProgrammesFileNative(
       path,
@@ -135,6 +140,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
       sourceRef: sourceRef,
       channelNamesById: channelNamesById,
       channelNumbersById: channelNumbersById,
+      naiveOffset: naiveOffset,
     );
   }
 
@@ -149,12 +155,14 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
     CompactEpgSourceRef? sourceRef,
     Map<String, String> channelNamesById = const {},
     Map<String, String> channelNumbersById = const {},
+    Duration? naiveOffset,
   }) async {
     final nativeResult = await parseXmltvCurrentNextFileNative(
       path,
       channelIds: channelIds,
       now: now,
       defaultProgrammeDuration: defaultProgrammeDuration,
+      naiveOffset: naiveOffset,
     );
     return XmltvCompactEpgRepository._fromNativeCurrentNextResult(
       nativeResult: nativeResult,
@@ -164,6 +172,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
       sourceRef: sourceRef,
       channelNamesById: channelNamesById,
       channelNumbersById: channelNumbersById,
+      naiveOffset: naiveOffset,
     );
   }
 
@@ -175,6 +184,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
     required CompactEpgSourceRef? sourceRef,
     required Map<String, String> channelNamesById,
     required Map<String, String> channelNumbersById,
+    Duration? naiveOffset,
   }) {
     final programsByChannel = <String, List<CompactEpgProgram>>{};
     var retainedProgrammeCount = 0;
@@ -182,7 +192,10 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
 
     for (var index = 0; index < nativeResult.programmes.length; index++) {
       final nativeProgramme = nativeResult.programmes[index];
-      final startsAt = parseXmltvTimestamp(nativeProgramme.start);
+      final startsAt = parseXmltvTimestamp(
+        nativeProgramme.start,
+        naiveOffset: naiveOffset,
+      );
       if (startsAt == null) {
         invalidTimestampCount++;
         continue;
@@ -190,7 +203,10 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
 
       final parsedEndsAt = nativeProgramme.stop == null
           ? null
-          : parseXmltvTimestamp(nativeProgramme.stop!);
+          : parseXmltvTimestamp(
+              nativeProgramme.stop!,
+              naiveOffset: naiveOffset,
+            );
       if (nativeProgramme.stop != null && parsedEndsAt == null) {
         invalidTimestampCount++;
         continue;
@@ -261,6 +277,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
     required CompactEpgSourceRef? sourceRef,
     required Map<String, String> channelNamesById,
     required Map<String, String> channelNumbersById,
+    Duration? naiveOffset,
   }) {
     final programsByChannel = <String, List<CompactEpgProgram>>{};
     var retainedProgrammeCount = 0;
@@ -277,6 +294,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
           nativeProgramme,
           defaultProgrammeDuration: defaultProgrammeDuration,
           index: programmeIndex,
+          naiveOffset: naiveOffset,
         );
         programmeIndex++;
         if (program == null) {
@@ -402,7 +420,7 @@ class XmltvCompactEpgRepository implements CompactEpgRepository {
   }
 }
 
-DateTime? parseXmltvTimestamp(String value) {
+DateTime? parseXmltvTimestamp(String value, {Duration? naiveOffset}) {
   final match = RegExp(
     r'^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\s*([+-])(\d{2})(\d{2}))?$',
   ).firstMatch(value.trim());
@@ -425,15 +443,19 @@ DateTime? parseXmltvTimestamp(String value) {
     )) {
       return null;
     }
-    final local = DateTime.utc(year, month, day, hour, minute, second);
+    final civil = DateTime.utc(year, month, day, hour, minute, second);
     final sign = match.group(7);
-    if (sign == null) return local;
-
-    final offset = Duration(
-      hours: int.parse(match.group(8)!),
-      minutes: int.parse(match.group(9)!),
-    );
-    return sign == '+' ? local.subtract(offset) : local.add(offset);
+    if (sign != null) {
+      final offset = Duration(
+        hours: int.parse(match.group(8)!),
+        minutes: int.parse(match.group(9)!),
+      );
+      return sign == '+' ? civil.subtract(offset) : civil.add(offset);
+    }
+    if (naiveOffset != null) {
+      return civil.subtract(naiveOffset);
+    }
+    return civil;
   } on FormatException {
     return null;
   } on ArgumentError {
@@ -483,15 +505,19 @@ CompactEpgProgram? _compactProgramFromNative(
   NativeXmltvProgramme programme, {
   required Duration defaultProgrammeDuration,
   required int index,
+  Duration? naiveOffset,
 }) {
-  final startsAt = parseXmltvTimestamp(programme.start);
+  final startsAt = parseXmltvTimestamp(
+    programme.start,
+    naiveOffset: naiveOffset,
+  );
   if (startsAt == null) {
     return null;
   }
 
   final parsedEndsAt = programme.stop == null
       ? null
-      : parseXmltvTimestamp(programme.stop!);
+      : parseXmltvTimestamp(programme.stop!, naiveOffset: naiveOffset);
   if (programme.stop != null && parsedEndsAt == null) {
     return null;
   }
