@@ -7,9 +7,7 @@ void main() {
   test('assertSafeUrl accepts IN1', () {
     expect(
       () => XmltvIngestGuard.assertSafeUrl(
-        Uri.parse(
-          'https://epgshare01.online/epgshare01/epg_ripper_IN1.xml.gz',
-        ),
+        Uri.parse('https://epgshare01.online/epgshare01/epg_ripper_IN1.xml.gz'),
       ),
       returnsNormally,
     );

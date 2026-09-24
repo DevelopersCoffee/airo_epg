@@ -29,8 +29,7 @@ class XmltvIngestGuard {
   ];
 
   static void assertSafeUrl(Uri url) {
-    if (url.host.isEmpty ||
-        (url.scheme != 'https' && url.scheme != 'http')) {
+    if (url.host.isEmpty || (url.scheme != 'https' && url.scheme != 'http')) {
       throw ArgumentError.value(url, 'url', 'Enter a valid HTTP(S) XMLTV URL.');
     }
     final haystack = '${url.path} ${url.query}'.toLowerCase();
@@ -48,8 +47,7 @@ class XmltvIngestGuard {
     if (compressedBytes > maxCompressedBytes) {
       throw const XmltvIngestTooLargeException();
     }
-    if (uncompressedBytes != null &&
-        uncompressedBytes > maxUncompressedBytes) {
+    if (uncompressedBytes != null && uncompressedBytes > maxUncompressedBytes) {
       throw const XmltvIngestTooLargeException();
     }
   }
