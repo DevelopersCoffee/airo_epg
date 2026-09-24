@@ -14,3 +14,4 @@ export 'src/entitlements.dart';
 export 'src/xmltv_parser.dart';
 export 'src/xmltv_compact_epg_repository.dart';
 export 'src/epgshare01_country_shard.dart';
+export 'src/xmltv_ingest_guard.dart';

@@ -58,17 +58,18 @@ void main() {
 
   test('gunzipFile aborts when uncompressed cap is exceeded', () async {
     final dir = await Directory.systemTemp.createTemp('xmltv_gunzip');
+    addTearDown(() async => dir.delete(recursive: true));
     final input = File('${dir.path}/in.gz');
     final output = File('${dir.path}/out.xml');
-    final payload = List<int>.filled(
-      XmltvIngestGuard.maxUncompressedBytes + 1,
-      0x41,
-    );
+    final payload = List<int>.filled(2048, 0x41);
     await input.writeAsBytes(gzip.encode(payload), flush: true);
     await expectLater(
-      XmltvIngestGuard.gunzipFile(input: input, output: output),
+      XmltvIngestGuard.gunzipFile(
+        input: input,
+        output: output,
+        maxUncompressedBytes: 1024,
+      ),
       throwsA(isA<XmltvIngestTooLargeException>()),
     );
-    await dir.delete(recursive: true);
   });
 }
