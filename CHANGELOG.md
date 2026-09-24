@@ -1,3 +1,8 @@
+## 1.2.0
+
+- Resolve EPGShare01 per-country XMLTV shard URLs from an ISO allow-list.
+- Reject ALL_SOURCES / oversized XMLTV URLs and cap gzip inflate.
+
 ## 1.1.0
 
 - `parseXmltvTimestamp` and `fromXmltv*` / `fromXmltvFileNative` / `fromXmltvCurrentNextFileNative` take optional `naiveOffset`.
